@@ -88,7 +88,7 @@ comercial da Loja Veloz - o módulo documenta a forma esperada
 
 ## Vídeo pitch
 
-Link: _(adicionar após gravação - roteiro em `docs/roteiro-video-pitch.md`)_
+Link: (https://youtu.be/2zQin6eVYdk)
 
 ## Estrutura de pastas
 
