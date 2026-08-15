@@ -1,0 +1,45 @@
+# HPA nos dois serviços que mais sofrem com pico de campanha: pedidos
+# (recebe a escrita) e estoque (reserva de item em alta concorrência).
+# Pagamentos e gateway ficam com réplica fixa neste MVP por terem custo de
+# integração externa mais previsível - podem ganhar HPA depois com dados
+# reais de produção (VPA seria o próximo passo para ajustar requests/limits
+# com base no uso histórico, mas exige um ciclo de observação antes de ativar
+# em modo automático, então fica só recomendado por ora).
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: pedidos-svc-hpa
+  namespace: pedidos-veloz
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: pedidos-svc
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 65 }
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 120
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: estoque-svc-hpa
+  namespace: pedidos-veloz
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: estoque-svc
+  minReplicas: 2
+  maxReplicas: 12
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 60 }

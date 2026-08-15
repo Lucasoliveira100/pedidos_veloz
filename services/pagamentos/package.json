@@ -1,0 +1,8 @@
+{
+  "name": "veloz-pagamentos",
+  "version": "0.2.0",
+  "description": "Serviço de Pagamentos - assina PedidoCriado e simula integracao com gateway de pagamento externo",
+  "main": "src/index.js",
+  "scripts": { "start": "node src/index.js" },
+  "dependencies": { "express": "^4.19.2", "nats": "^2.28.2", "prom-client": "^15.1.0" }
+}

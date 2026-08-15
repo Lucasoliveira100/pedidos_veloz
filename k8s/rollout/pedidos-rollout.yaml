@@ -1,0 +1,56 @@
+# Estratégia de deploy: Canary via Argo Rollouts, aplicada primeiro em
+# pedidos-svc por ser o serviço mais crítico do fluxo (escreve no banco e
+# dispara os eventos). Rolling update padrão do Kubernetes já cobre
+# gateway/pagamentos/estoque; pedidos ganha um controle mais fino porque um
+# bug ali pode gerar pedido duplicado ou perdido, o que rolling comum não
+# evita sozinho (não pausa nem observa métrica antes de continuar).
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: pedidos-svc
+  namespace: pedidos-veloz
+spec:
+  replicas: 4
+  selector:
+    matchLabels: { app: pedidos-svc }
+  template:
+    metadata:
+      labels: { app: pedidos-svc }
+    spec:
+      containers:
+        - name: pedidos-svc
+          image: registry.velozretail.com/pedidos-veloz/pedidos:latest
+          ports: [{ containerPort: 8081 }]
+  strategy:
+    canary:
+      steps:
+        - setWeight: 10
+        - pause: { duration: 3m }
+        - setWeight: 30
+        - pause: { duration: 5m }
+        - analysis:
+            templates:
+              - templateName: taxa-erro-aceitavel
+        - setWeight: 60
+        - pause: { duration: 5m }
+        - setWeight: 100
+---
+# Analysis Template consulta o Prometheus (via OTel Collector) e aborta o
+# rollout automaticamente se a taxa de erro do canary passar de 2%.
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: taxa-erro-aceitavel
+  namespace: pedidos-veloz
+spec:
+  metrics:
+    - name: taxa-erro-5xx
+      interval: 1m
+      successCondition: result[0] < 0.02
+      provider:
+        prometheus:
+          address: http://prometheus.observability.svc:9090
+          query: |
+            sum(rate(veloz_pedidos_http_requests_total{status=~"5.."}[2m]))
+            /
+            sum(rate(veloz_pedidos_http_requests_total[2m]))

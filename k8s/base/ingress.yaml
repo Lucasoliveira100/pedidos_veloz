@@ -1,0 +1,18 @@
+# Ingress via Traefik (CRD IngressRoute) - escolhido no lugar do
+# ingress-nginx porque já habilita métricas e circuit breaker nativos sem
+# sidecar extra, o que ajuda no MVP de 4 semanas.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: veloz-gateway-route
+  namespace: pedidos-veloz
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: Host(`api.pedidosveloz.com.br`)
+      kind: Rule
+      services:
+        - name: gateway-svc
+          port: 8080
+  tls:
+    certResolver: letsencrypt

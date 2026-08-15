@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pedidos-svc
+  namespace: pedidos-veloz
+  labels: { app: pedidos-svc }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: pedidos-svc }
+  template:
+    metadata:
+      labels: { app: pedidos-svc }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8081"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: pedidos-svc
+          image: registry.velozretail.com/pedidos-veloz/pedidos:latest
+          ports: [{ containerPort: 8081 }]
+          envFrom:
+            - configMapRef: { name: veloz-config }
+            - secretRef: { name: veloz-db-credentials }
+          env:
+            - { name: PORTA, value: "8081" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits: { cpu: "300m", memory: "256Mi" }
+          readinessProbe:
+            httpGet: { path: /readyz, port: 8081 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8081 }
+            initialDelaySeconds: 10
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pedidos-svc
+  namespace: pedidos-veloz
+spec:
+  selector: { app: pedidos-svc }
+  ports: [{ port: 8081, targetPort: 8081 }]

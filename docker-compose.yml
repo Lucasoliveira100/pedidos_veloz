@@ -1,0 +1,77 @@
+# Ambiente de desenvolvimento local do Pedidos Veloz.
+# Sobe toda a arquitetura com "docker compose up -d", com rede e volumes
+# isolados por projeto e variáveis carregadas de .env (padrão 12-factor:
+# configuração fora do código).
+name: pedidos-veloz
+
+networks:
+  veloz-net:
+    driver: bridge
+
+volumes:
+  pgdata:
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./services/pedidos/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    networks: [veloz-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  nats:
+    image: nats:2.10-alpine
+    command: ["-js"]  # habilita JetStream (persistência de eventos)
+    ports:
+      - "4222:4222"
+    networks: [veloz-net]
+
+  pedidos-svc:
+    build: ./services/pedidos
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      NATS_URL: ${NATS_URL}
+      PORTA: 8081
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats: { condition: service_started }
+    networks: [veloz-net]
+
+  pagamentos-svc:
+    build: ./services/pagamentos
+    environment:
+      NATS_URL: ${NATS_URL}
+      PORTA: 8082
+    depends_on: [nats]
+    networks: [veloz-net]
+
+  estoque-svc:
+    build: ./services/estoque
+    environment:
+      NATS_URL: ${NATS_URL}
+      PORTA: 8083
+    depends_on: [nats]
+    networks: [veloz-net]
+
+  gateway:
+    build: ./services/gateway
+    environment:
+      PORTA: 8080
+      PEDIDOS_URL: http://pedidos-svc:8081
+      PAGAMENTOS_URL: http://pagamentos-svc:8082
+      ESTOQUE_URL: http://estoque-svc:8083
+    ports:
+      - "8080:8080"
+    depends_on: [pedidos-svc, pagamentos-svc, estoque-svc]
+    networks: [veloz-net]

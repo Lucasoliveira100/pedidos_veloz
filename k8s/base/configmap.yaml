@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: veloz-config
+  namespace: pedidos-veloz
+data:
+  # Apenas dados NÃO sensíveis - segredos vão em Secret, nunca aqui.
+  PEDIDOS_URL: "http://pedidos-svc:8081"
+  PAGAMENTOS_URL: "http://pagamentos-svc:8082"
+  ESTOQUE_URL: "http://estoque-svc:8083"
+  NATS_URL: "nats://nats:4222"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"

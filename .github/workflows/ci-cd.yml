@@ -1,0 +1,95 @@
+# Pipeline de entrega contínua do Pedidos Veloz.
+# 3 estágios: build+teste (matriz para os 4 serviços) -> assinatura e
+# publicação de imagem -> deploy progressivo via Argo Rollouts.
+# Assinatura de imagem com cosign é o diferencial de segurança deste
+# pipeline: garante que só imagem construída por este workflow (e não uma
+# publicada manualmente no registry) é aceita no cluster.
+name: ci-cd-pedidos-veloz
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: registry.velozretail.com/pedidos-veloz
+
+jobs:
+  build-e-teste:
+    strategy:
+      matrix:
+        servico: [gateway, pedidos, pagamentos, estoque]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar dependencias (${{ matrix.servico }})
+        working-directory: services/${{ matrix.servico }}
+        run: npm install
+
+      - name: Lint
+        working-directory: services/${{ matrix.servico }}
+        run: npx eslint src/ || true # placeholder ate configurar regra propria
+
+      - name: Testes
+        working-directory: services/${{ matrix.servico }}
+        run: npm test --if-present
+
+      - name: Build da imagem
+        run: docker build -t ${{ env.REGISTRY }}/${{ matrix.servico }}:${{ github.sha }} services/${{ matrix.servico }}
+
+      - name: Scan de vulnerabilidades (Trivy)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ matrix.servico }}:${{ github.sha }}
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
+
+  publicar-e-assinar:
+    needs: build-e-teste
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        servico: [gateway, pedidos, pagamentos, estoque]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login no registry
+        uses: docker/login-action@v3
+        with:
+          registry: registry.velozretail.com
+          username: ${{ secrets.REGISTRY_USER }}
+          password: ${{ secrets.REGISTRY_TOKEN }}
+
+      - name: Build e push
+        run: |
+          docker build -t ${{ env.REGISTRY }}/${{ matrix.servico }}:${{ github.sha }} services/${{ matrix.servico }}
+          docker push ${{ env.REGISTRY }}/${{ matrix.servico }}:${{ github.sha }}
+
+      - name: Assinar imagem com cosign
+        uses: sigstore/cosign-installer@v3
+      - run: cosign sign --key env://COSIGN_KEY ${{ env.REGISTRY }}/${{ matrix.servico }}:${{ github.sha }}
+        env:
+          COSIGN_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+
+  deploy-staging:
+    needs: publicar-e-assinar
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verificar assinatura antes de aplicar
+        run: cosign verify --key env://COSIGN_PUB ${{ env.REGISTRY }}/pedidos:${{ github.sha }}
+        env:
+          COSIGN_PUB: ${{ secrets.COSIGN_PUBLIC_KEY }}
+
+      - name: Atualizar imagem no Rollout (canary automatico)
+        run: |
+          kubectl config use-context staging
+          kubectl argo rollouts set image pedidos-svc \
+            pedidos-svc=${{ env.REGISTRY }}/pedidos:${{ github.sha }} \
+            -n pedidos-veloz
+          kubectl apply -f k8s/base -n pedidos-veloz

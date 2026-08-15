@@ -1,0 +1,13 @@
+{
+  "name": "veloz-pedidos",
+  "version": "0.3.0",
+  "description": "Serviço de Pedidos - cria e consulta pedidos, publica evento PedidoCriado",
+  "main": "src/index.js",
+  "scripts": { "start": "node src/index.js" },
+  "dependencies": {
+    "express": "^4.19.2",
+    "pg": "^8.11.5",
+    "nats": "^2.28.2",
+    "prom-client": "^15.1.0"
+  }
+}
